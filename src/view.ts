@@ -1,41 +1,53 @@
-// view.ts — minimal Tier 2 view entry, loaded by dist/view.html.
-//
-// asyar-browser has no `mode: "view"` command, so this iframe is never
-// navigated to and renders no UI. It exists only to satisfy Asyar's two-iframe
-// Tier 2 model and the build/attach tooling, which expect a `dist/view.html`.
-// All real work happens in the worker (search aggregation + open-url command).
-//
-// Imports come exclusively from `asyar-sdk/view`, which asserts
-// `window.__ASYAR_ROLE__ === "view"` at module-load time.
+// ─────────────────────────────────────────────────────────────────────
+// view.ts — Browser Tier 2 view entry, loaded by dist/view.html.
+// Mirrors extensions/memory/src/view.ts: registers the view-side Extension
+// impl so `command-bar` navigates to CommandBar, mounts the Svelte component,
+// forwards ⌘K to the host.
+// ─────────────────────────────────────────────────────────────────────
 
+import 'asyar-sdk/tokens.css';
+import { mount } from 'svelte';
 import {
   ExtensionContext,
   extensionBridge,
+  registerIconElement,
   type Extension,
+  type IExtensionManager,
 } from 'asyar-sdk/view';
 import manifest from '../manifest.json';
+import CommandBar from './CommandBar.svelte';
 
 class BrowserViewExtension implements Extension {
-  async initialize(_ctx: ExtensionContext): Promise<void> {}
+  private extensionManager?: IExtensionManager;
+
+  async initialize(ctx: ExtensionContext): Promise<void> {
+    this.extensionManager = ctx.getService<IExtensionManager>('extensions');
+  }
+
   async activate(): Promise<void> {}
   async deactivate(): Promise<void> {}
-  async executeCommand(
-    _commandId: string,
-    _args?: Record<string, unknown>,
-  ): Promise<unknown> {
+
+  async executeCommand(commandId: string): Promise<unknown> {
+    if (commandId === 'command-bar') {
+      this.extensionManager?.navigateToView('org.asyar.browser/CommandBar');
+      return { type: 'view', viewPath: 'org.asyar.browser/CommandBar' };
+    }
     return undefined;
   }
+
   onUnload = (): void => {};
 }
 
 const extensionId =
   window.location.hostname === 'localhost' ||
   window.location.hostname === 'asyar-extension.localhost'
-    ? window.location.pathname.split('/').filter(Boolean)[0] || 'org.asyar.browser'
+    ? window.location.pathname.split('/').filter(Boolean)[0] ||
+      'org.asyar.browser'
     : window.location.hostname || 'org.asyar.browser';
 
 const context = new ExtensionContext();
 context.setExtensionId(extensionId);
+registerIconElement();
 
 const viewExtension = new BrowserViewExtension();
 extensionBridge.registerManifest(
@@ -43,10 +55,33 @@ extensionBridge.registerManifest(
 );
 extensionBridge.registerExtensionImplementation(extensionId, viewExtension);
 
-// Mirror the sibling extensions' view boot ceremony. Both calls are no-ops
-// here (this view never renders), but driving them keeps the lifecycle
-// protocol consistent with the worker and the other Tier 2 extensions.
+window.addEventListener('keydown', (event) => {
+  const isCommandK = (event.metaKey || event.ctrlKey) && event.key === 'k';
+  if (isCommandK) {
+    event.preventDefault();
+    window.parent.postMessage(
+      {
+        type: 'asyar:extension:keydown',
+        payload: {
+          key: event.key,
+          metaKey: event.metaKey,
+          ctrlKey: event.ctrlKey,
+          shiftKey: event.shiftKey,
+          altKey: event.altKey,
+        },
+      },
+      '*',
+    );
+  }
+});
+
 void (async () => {
   await viewExtension.initialize(context);
   await viewExtension.activate();
 })();
+
+const viewName = new URLSearchParams(window.location.search).get('view');
+const target = document.getElementById('app');
+if (viewName === 'CommandBar' && target) {
+  mount(CommandBar, { target, props: { context } });
+}

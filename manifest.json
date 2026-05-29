@@ -24,6 +24,34 @@
       "arguments": [
         { "name": "url", "type": "text", "placeholder": "https://…", "default": "" }
       ]
+    },
+    {
+      "id": "command-bar",
+      "name": "Browser",
+      "description": "Search tabs, history, bookmarks; open URLs and web searches — the browser command bar.",
+      "icon": "🌐",
+      "mode": "view",
+      "component": "CommandBar",
+      "actions": []
+    }
+  ],
+  "preferences": [
+    {
+      "name": "openTarget",
+      "title": "Open new content in",
+      "description": "Which browser receives new tabs, URLs, and web searches opened from the command bar.",
+      "type": "dropdown",
+      "default": "most-recent",
+      "data": [
+        { "value": "most-recent", "title": "Most recently active browser" },
+        { "value": "chrome", "title": "Chrome" },
+        { "value": "brave", "title": "Brave" },
+        { "value": "arc", "title": "Arc" },
+        { "value": "edge", "title": "Edge" },
+        { "value": "vivaldi", "title": "Vivaldi" },
+        { "value": "firefox", "title": "Firefox" },
+        { "value": "safari", "title": "Safari" }
+      ]
     }
   ],
   "background": { "main": "dist/worker.js" }

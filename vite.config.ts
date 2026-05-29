@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { existsSync } from 'fs';
 import { fileURLToPath, URL } from 'url';
 import { resolve } from 'path';
@@ -26,6 +27,8 @@ const sdkAliases = useLocalSdk
   : {};
 
 export default defineConfig(() => ({
+  plugins: [svelte()],
+
   // Relative asset paths so the Rust `asyar-extension://` scheme handler can
   // serve `./worker.js` / `./assets/*` from the install path.
   base: './',
