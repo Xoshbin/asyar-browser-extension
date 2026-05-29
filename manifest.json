@@ -1,0 +1,30 @@
+{
+  "id": "org.asyar.browser",
+  "name": "Browser",
+  "version": "1.0.0",
+  "type": "extension",
+  "description": "Search tabs, bookmarks, and history across your paired browsers; open URLs in any paired browser.",
+  "author": "Asyar",
+  "icon": "🌐",
+  "searchable": true,
+  "asyarSdk": "^3.0.1",
+  "permissions": [
+    "browser:tabs.read",
+    "browser:tabs.write",
+    "browser:bookmarks.read",
+    "browser:history.read"
+  ],
+  "commands": [
+    {
+      "id": "open-url",
+      "name": "Open URL",
+      "description": "Open a URL in a paired browser (or the OS default).",
+      "icon": "🌐",
+      "mode": "background",
+      "arguments": [
+        { "name": "url", "type": "text", "placeholder": "https://…", "default": "" }
+      ]
+    }
+  ],
+  "background": { "main": "dist/worker.js" }
+}

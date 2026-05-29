@@ -1,0 +1,22 @@
+{
+  "name": "org.asyar.browser",
+  "version": "1.0.0",
+  "description": "Search tabs, bookmarks, and history across your paired browsers; open URLs in any paired browser.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "publish": "asyar publish",
+    "link": "asyar link",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "package": "npm run build && zip -r extension.zip dist manifest.json"
+  },
+  "devDependencies": {
+    "asyar-sdk": "workspace:*",
+    "typescript": "^5.0.0",
+    "vite": "^6.0.0",
+    "vitest": "^2.1.0",
+    "@vitest/coverage-v8": "^2.1.0"
+  }
+}
