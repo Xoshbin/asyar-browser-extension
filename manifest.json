@@ -1,7 +1,7 @@
 {
   "id": "org.asyar.browser",
   "name": "Browser",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "extension",
   "description": "Search tabs, bookmarks, and history across your paired browsers; open URLs in any paired browser.",
   "author": "Asyar",
@@ -22,7 +22,12 @@
       "icon": "🌐",
       "mode": "background",
       "arguments": [
-        { "name": "url", "type": "text", "placeholder": "https://…", "default": "" }
+        {
+          "name": "url",
+          "type": "text",
+          "placeholder": "https://…",
+          "default": ""
+        }
       ]
     },
     {
@@ -43,16 +48,42 @@
       "type": "dropdown",
       "default": "most-recent",
       "data": [
-        { "value": "most-recent", "title": "Most recently active browser" },
-        { "value": "chrome", "title": "Chrome" },
-        { "value": "brave", "title": "Brave" },
-        { "value": "arc", "title": "Arc" },
-        { "value": "edge", "title": "Edge" },
-        { "value": "vivaldi", "title": "Vivaldi" },
-        { "value": "firefox", "title": "Firefox" },
-        { "value": "safari", "title": "Safari" }
+        {
+          "value": "most-recent",
+          "title": "Most recently active browser"
+        },
+        {
+          "value": "chrome",
+          "title": "Chrome"
+        },
+        {
+          "value": "brave",
+          "title": "Brave"
+        },
+        {
+          "value": "arc",
+          "title": "Arc"
+        },
+        {
+          "value": "edge",
+          "title": "Edge"
+        },
+        {
+          "value": "vivaldi",
+          "title": "Vivaldi"
+        },
+        {
+          "value": "firefox",
+          "title": "Firefox"
+        },
+        {
+          "value": "safari",
+          "title": "Safari"
+        }
       ]
     }
   ],
-  "background": { "main": "dist/worker.js" }
+  "background": {
+    "main": "dist/worker.js"
+  }
 }
