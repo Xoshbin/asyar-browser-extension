@@ -26,6 +26,11 @@
   let selected = $state(0);
   let openTargetSetting = $state('most-recent');
 
+  // Tracks whether any browser is paired so we can show install guidance when
+  // the Asyar Companion isn't connected yet. `null` = not checked yet (avoids a
+  // flash of the empty state before the first lookup resolves).
+  let pairedCount = $state<number | null>(null);
+
   // Monotonic request serial: guards against a stale (earlier-issued)
   // refresh resolving AFTER a newer one and clobbering the results. On
   // fast typing each keystroke bumps `reqSeq`; only the latest in-flight
@@ -114,6 +119,15 @@
         if (typeof v === 'string' && v) openTargetSetting = v;
       } catch {
         /* keep default 'most-recent' */
+      }
+    })();
+    void (async () => {
+      try {
+        const paired = await browser.listPairedBrowsers();
+        pairedCount = paired.length;
+      } catch {
+        // Treat a lookup failure as "not paired" so guidance still surfaces.
+        pairedCount = 0;
       }
     })();
     window.addEventListener('message', handleMessage);
@@ -233,6 +247,18 @@
       {#if subtitleOf(row)}<span class="subtitle">{subtitleOf(row)}</span>{/if}
     </button>
   {/each}
+
+  {#if rows.length === 0 && pairedCount === 0}
+    <div class="companion-cta">
+      <span class="cta-icon">🧩</span>
+      <p class="cta-title">Connect your browser</p>
+      <p class="cta-body">
+        This extension works together with the <strong>Asyar Companion</strong> browser
+        extension. Install the companion in your browser, then approve it from
+        <strong>Settings → Browsers</strong> to search your tabs, bookmarks, and history here.
+      </p>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -268,5 +294,29 @@
   .subtitle {
     color: var(--text-tertiary);
     font-size: var(--font-size-sm);
+  }
+  .companion-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--space-2);
+    padding: var(--space-7) var(--space-5);
+  }
+  .cta-icon {
+    font-size: var(--font-size-xl);
+  }
+  .cta-title {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: var(--font-size-base);
+    font-weight: 600;
+  }
+  .cta-body {
+    margin: 0;
+    max-width: 32ch;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
   }
 </style>

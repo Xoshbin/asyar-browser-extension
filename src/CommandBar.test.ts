@@ -61,6 +61,24 @@ describe('CommandBar', () => {
     await screen.findByText('Search the web for "react"');
   });
 
+  it('shows Asyar Companion install guidance when no browser is paired', async () => {
+    const browser = makeBrowser();
+    browser.listTabs = vi.fn(async () => []);
+    browser.searchHistory = vi.fn(async () => []);
+    browser.listBookmarks = vi.fn(async () => []);
+    browser.listPairedBrowsers = vi.fn(async () => []);
+    render(CommandBar, { props: { context: makeContext(browser) } });
+    await screen.findByText(/Asyar Companion/i);
+    await screen.findByText(/Settings → Browsers/i);
+  });
+
+  it('does not show companion guidance once a browser is paired', async () => {
+    const browser = makeBrowser();
+    render(CommandBar, { props: { context: makeContext(browser) } });
+    await screen.findByText('React');
+    expect(screen.queryByText(/Asyar Companion/i)).toBeNull();
+  });
+
   it('Enter on the focused tab row activates that tab', async () => {
     const browser = makeBrowser();
     render(CommandBar, { props: { context: makeContext(browser) } });
