@@ -24,7 +24,7 @@ function makeContext(browser: any) {
   const prefs = { getAll: vi.fn(async () => ({ extension: { openTarget: 'most-recent' }, commands: {} })) };
   // Stable singletons so registerAction calls are observable after render
   const actions = { registerAction: vi.fn(), unregisterAction: vi.fn() };
-  const feedback = { showHUD: vi.fn(async () => {}), showToast: vi.fn(async () => '') };
+  const feedback = { showHUD: vi.fn(async () => {}) };
   return {
     getService: (name: string) => {
       if (name === 'browser') return browser;

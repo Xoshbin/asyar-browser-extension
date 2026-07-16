@@ -1,13 +1,13 @@
 {
   "id": "org.asyar.browser",
   "name": "Browser",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "type": "extension",
   "description": "Search tabs, bookmarks, and history across your paired browsers; open URLs in any paired browser.",
   "author": "Asyar",
   "icon": "🌐",
   "searchable": true,
-  "asyarSdk": "^4.0.0",
+  "asyarSdk": "^4.3.0",
   "permissions": [
     "browser:tabs.read",
     "browser:tabs.write",
