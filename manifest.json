@@ -26,7 +26,8 @@
           "name": "url",
           "type": "text",
           "placeholder": "https://…",
-          "default": ""
+          "required": true,
+          "seed": "none"
         }
       ]
     },
