@@ -217,9 +217,6 @@
 
     return () => {
       window.removeEventListener('message', handleMessage);
-      for (const action of viewActions) {
-        actionsService.unregisterAction(action.id);
-      }
     };
   });
 
