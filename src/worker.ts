@@ -11,10 +11,7 @@
 // `worker.html` at serve time (see `uri_schemes.rs`).
 // ───────────────────────────────────────────────────────────────────────────
 
-import {
-  ExtensionContext as WorkerExtensionContext,
-  extensionBridge,
-} from 'asyar-sdk/worker';
+import { ExtensionContext as WorkerExtensionContext, extensionBridge } from 'asyar-sdk/worker';
 import type {
   Extension,
   ExtensionContext,
@@ -30,11 +27,7 @@ import manifest from '../manifest.json';
 import { aggregateSearch } from './search';
 import { isUrlLike, normaliseUrl } from './url';
 
-const extensionId =
-  window.location.hostname === 'localhost' ||
-  window.location.hostname === 'asyar-extension.localhost'
-    ? window.location.pathname.split('/').filter(Boolean)[0] || 'org.asyar.browser'
-    : window.location.hostname || 'org.asyar.browser';
+const extensionId = manifest.id;
 
 const workerContext = new WorkerExtensionContext();
 workerContext.setExtensionId(extensionId);
@@ -79,10 +72,7 @@ class BrowserWorkerExtension implements Extension {
     }
   }
 
-  async executeCommand(
-    commandId: string,
-    args?: CommandExecuteArgs,
-  ): Promise<unknown> {
+  async executeCommand(commandId: string, args?: CommandExecuteArgs): Promise<unknown> {
     if (commandId !== 'open-url') {
       log.warn(`[${extensionId}] unknown command: ${commandId}`);
       return undefined;
@@ -130,7 +120,3 @@ void (async () => {
     log.error(`[${extensionId}] worker activate failed: ${msg}`);
   }
 })();
-
-window.addEventListener('beforeunload', () => {
-  void browserExtension.deactivate();
-});
