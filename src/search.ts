@@ -8,6 +8,7 @@ const TAB_SCORE_BASE = 0.85;
 const BOOKMARK_SCORE_BASE = 0.75;
 const HISTORY_SCORE_BASE = 0.55;
 const DECAY = 0.02;
+const HISTORY_BUDGET_MS = 100;
 
 export async function aggregateSearch(
   query: string,
@@ -22,11 +23,17 @@ export async function aggregateSearch(
     out.push(openUrlToResult(normaliseUrl(q), null));
   }
 
-  // Tabs, bookmarks, history fetched in parallel; one failure must not drop the others.
+  // Tabs and bookmarks must not miss the host's 200 ms search budget because a
+  // large on-disk history database is still being scanned.
   const [tabsResult, bookmarksResult, historyResult] = await Promise.allSettled([
     browser.listTabs({ query: q }),
     browser.listBookmarks({ query: q }),
-    browser.searchHistory(q, { limit: MAX_PER_SOURCE }),
+    Promise.race([
+      browser.searchHistory(q, { limit: MAX_PER_SOURCE }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('history search budget exceeded')), HISTORY_BUDGET_MS),
+      ),
+    ]),
   ]);
 
   if (tabsResult.status === 'fulfilled') {

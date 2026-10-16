@@ -3,9 +3,13 @@ import { aggregateSearch } from './search';
 
 const browser = { family: 'chromium', variant: 'chrome', profileId: 'Default' } as const;
 
-function makeBrowserProxy(opts: {
-  tabs?: any[]; bookmarks?: any[]; history?: any[];
-} = {}) {
+function makeBrowserProxy(
+  opts: {
+    tabs?: any[];
+    bookmarks?: any[];
+    history?: any[];
+  } = {},
+) {
   return {
     listTabs: vi.fn(async () => opts.tabs ?? []),
     listBookmarks: vi.fn(async () => opts.bookmarks ?? []),
@@ -16,6 +20,32 @@ function makeBrowserProxy(opts: {
 }
 
 describe('aggregateSearch', () => {
+  it('returns tabs without waiting for a stalled history lookup', async () => {
+    vi.useFakeTimers();
+    const proxy = makeBrowserProxy({
+      tabs: [
+        {
+          id: 't',
+          browser,
+          windowId: 'w',
+          index: 0,
+          title: 'Fast tab',
+          url: 'https://fast.test',
+          isActive: true,
+          isPinned: false,
+          isAudible: false,
+        },
+      ],
+    });
+    proxy.searchHistory = vi.fn(() => new Promise(() => {}));
+
+    const pending = aggregateSearch('fast', proxy as any);
+    await vi.advanceTimersByTimeAsync(150);
+
+    await expect(pending).resolves.toEqual([expect.objectContaining({ title: 'Fast tab' })]);
+    vi.useRealTimers();
+  });
+
   it('returns empty array for empty query', async () => {
     const out = await aggregateSearch('', makeBrowserProxy() as any);
     expect(out).toEqual([]);
@@ -30,9 +60,32 @@ describe('aggregateSearch', () => {
 
   it('aggregates tabs, bookmarks, history for a word query', async () => {
     const proxy = makeBrowserProxy({
-      tabs: [{ id: 't1', browser, windowId: 'w', index: 0, title: 'GitHub T', url: 'https://github.com', isActive: false, isPinned: false, isAudible: false }],
-      bookmarks: [{ id: 'b1', browser, title: 'GitHub B', url: 'https://github.com', folderPath: ['Bar'], addedAt: 0 }],
-      history: [{ url: 'https://github.com', title: 'GitHub H', browser, lastVisitAt: 0, visitCount: 5 }],
+      tabs: [
+        {
+          id: 't1',
+          browser,
+          windowId: 'w',
+          index: 0,
+          title: 'GitHub T',
+          url: 'https://github.com',
+          isActive: false,
+          isPinned: false,
+          isAudible: false,
+        },
+      ],
+      bookmarks: [
+        {
+          id: 'b1',
+          browser,
+          title: 'GitHub B',
+          url: 'https://github.com',
+          folderPath: ['Bar'],
+          addedAt: 0,
+        },
+      ],
+      history: [
+        { url: 'https://github.com', title: 'GitHub H', browser, lastVisitAt: 0, visitCount: 5 },
+      ],
     });
     const out = await aggregateSearch('github', proxy as any);
     expect(out.length).toBe(3);
@@ -43,24 +96,54 @@ describe('aggregateSearch', () => {
 
   it('ranks tabs above bookmarks above history when all match', async () => {
     const proxy = makeBrowserProxy({
-      tabs: [{ id: 't', browser, windowId: 'w', index: 0, title: 'X', url: 'https://x.com', isActive: false, isPinned: false, isAudible: false }],
-      bookmarks: [{ id: 'b', browser, title: 'X', url: 'https://x.com', folderPath: [], addedAt: 0 }],
+      tabs: [
+        {
+          id: 't',
+          browser,
+          windowId: 'w',
+          index: 0,
+          title: 'X',
+          url: 'https://x.com',
+          isActive: false,
+          isPinned: false,
+          isAudible: false,
+        },
+      ],
+      bookmarks: [
+        { id: 'b', browser, title: 'X', url: 'https://x.com', folderPath: [], addedAt: 0 },
+      ],
       history: [{ url: 'https://x.com', title: 'X', browser, lastVisitAt: 0, visitCount: 1 }],
     });
     const out = await aggregateSearch('x', proxy as any);
-    const tabScore = out.find(r => r.icon === '🌐')?.score ?? 0;
-    const bookmarkScore = out.find(r => r.icon === '🔖')?.score ?? 0;
-    const historyScore = out.find(r => r.icon === '🕘')?.score ?? 0;
+    const tabScore = out.find((r) => r.icon === '🌐')?.score ?? 0;
+    const bookmarkScore = out.find((r) => r.icon === '🔖')?.score ?? 0;
+    const historyScore = out.find((r) => r.icon === '🕘')?.score ?? 0;
     expect(tabScore).toBeGreaterThan(bookmarkScore);
     expect(bookmarkScore).toBeGreaterThan(historyScore);
   });
 
   it('tolerates one source failing without dropping the others', async () => {
     const proxy = makeBrowserProxy({
-      tabs: [{ id: 't', browser, windowId: 'w', index: 0, title: 'X', url: 'https://x.com', isActive: false, isPinned: false, isAudible: false }],
-      bookmarks: [{ id: 'b', browser, title: 'X', url: 'https://x.com', folderPath: [], addedAt: 0 }],
+      tabs: [
+        {
+          id: 't',
+          browser,
+          windowId: 'w',
+          index: 0,
+          title: 'X',
+          url: 'https://x.com',
+          isActive: false,
+          isPinned: false,
+          isAudible: false,
+        },
+      ],
+      bookmarks: [
+        { id: 'b', browser, title: 'X', url: 'https://x.com', folderPath: [], addedAt: 0 },
+      ],
     });
-    proxy.searchHistory = vi.fn(async () => { throw new Error('boom'); });
+    proxy.searchHistory = vi.fn(async () => {
+      throw new Error('boom');
+    });
     const out = await aggregateSearch('x', proxy as any);
     // Tabs + bookmark still returned, history dropped silently
     expect(out.length).toBe(2);
