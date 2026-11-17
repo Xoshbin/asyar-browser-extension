@@ -19,7 +19,6 @@
       "id": "open-url",
       "name": "Open URL",
       "description": "Open a URL in a paired browser (or the OS default).",
-      "icon": "🌐",
       "mode": "background",
       "arguments": [
         {
@@ -35,7 +34,6 @@
       "id": "command-bar",
       "name": "Browser",
       "description": "Search tabs, history, bookmarks; open URLs and web searches — the browser command bar.",
-      "icon": "🌐",
       "mode": "view",
       "component": "CommandBar",
       "searchBarAccessory": {
