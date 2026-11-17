@@ -8,9 +8,18 @@ export type Row =
   | { kind: 'url'; title: string; url: string }
   | { kind: 'search'; title: string; query: string };
 
-const MAX_TABS = 20, MAX_HISTORY = 8, MAX_BOOKMARKS = 8, EMPTY_HISTORY = 4;
+const MAX_TABS = 20,
+  MAX_HISTORY = 8,
+  MAX_BOOKMARKS = 8,
+  EMPTY_HISTORY = 4;
 
-function host(u: string): string { try { return new URL(u).host; } catch { return u; } }
+function host(u: string): string {
+  try {
+    return new URL(u).host;
+  } catch {
+    return u;
+  }
+}
 
 export function blendResults(
   query: string,
@@ -19,21 +28,35 @@ export function blendResults(
   const q = query.trim();
   const rows: Row[] = [];
 
+  // The subtitle is the row's location and nothing else — the browser it
+  // lives in is the trailing accessory's job, so it is not repeated here.
   for (const t of data.tabs.slice(0, MAX_TABS)) {
-    rows.push({ kind: 'tab', title: t.title || t.url, subtitle: `${t.browser.variant} · ${host(t.url)}`, tab: t });
+    rows.push({ kind: 'tab', title: t.title || t.url, subtitle: host(t.url), tab: t });
   }
   const histLimit = q ? MAX_HISTORY : EMPTY_HISTORY;
   for (const h of data.history.slice(0, histLimit)) {
-    rows.push({ kind: 'history', title: h.title || h.url, subtitle: `${h.browser.variant} · ${host(h.url)}`, url: h.url, browserVariant: h.browser.variant });
+    rows.push({
+      kind: 'history',
+      title: h.title || h.url,
+      subtitle: host(h.url),
+      url: h.url,
+      browserVariant: h.browser.variant,
+    });
   }
   if (q) {
     for (const b of data.bookmarks.slice(0, MAX_BOOKMARKS)) {
-      rows.push({ kind: 'bookmark', title: b.title || b.url, subtitle: `${b.browser.variant} · ${host(b.url)}`, url: b.url, browserVariant: b.browser.variant });
+      rows.push({
+        kind: 'bookmark',
+        title: b.title || b.url,
+        subtitle: host(b.url),
+        url: b.url,
+        browserVariant: b.browser.variant,
+      });
     }
     if (isUrlLike(q)) {
       rows.push({ kind: 'url', title: `Open ${normaliseUrl(q)}`, url: normaliseUrl(q) });
     }
-    rows.push({ kind: 'search', title: `Search the web for "${q}"`, query: q });   // pinned last
+    rows.push({ kind: 'search', title: `Search the web for "${q}"`, query: q }); // pinned last
   }
   return rows;
 }

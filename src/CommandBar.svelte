@@ -12,6 +12,7 @@
   } from 'asyar-sdk/contracts';
   import { blendResults, type Row } from './blend';
   import { resolveOpenTarget } from './target';
+  import { copyText } from './clipboard';
 
   const EXTENSION_ID = 'org.asyar.browser';
 
@@ -25,6 +26,7 @@
   let rows = $state<Row[]>([]);
   let selected = $state(0);
   let openTargetSetting = $state('most-recent');
+  let listEl = $state<HTMLDivElement | null>(null);
 
   // Tracks whether any browser is paired so we can show install guidance when
   // the Asyar Companion isn't connected yet. `null` = not checked yet (avoids a
@@ -86,10 +88,53 @@
     return 'subtitle' in row ? row.subtitle : '';
   }
 
-  function urlOf(row: Row): string | undefined {
+  function urlOf(row: Row | undefined): string | undefined {
+    if (!row) return undefined;
     if (row.kind === 'tab') return row.tab.url;
     if (row.kind === 'search') return undefined;
     return row.url;
+  }
+
+  const BROWSER_NAMES: Record<string, string> = {
+    arc: 'Arc',
+    brave: 'Brave',
+    chrome: 'Chrome',
+    edge: 'Edge',
+    firefox: 'Firefox',
+    safari: 'Safari',
+    vivaldi: 'Vivaldi',
+  };
+
+  function browserName(variant: string): string {
+    return BROWSER_NAMES[variant] ?? variant.charAt(0).toUpperCase() + variant.slice(1);
+  }
+
+  /**
+   * The trailing slot: which browser the row lives in (or would open in), or
+   * the key that opens it for the synthetic rows. Mono, because it is a
+   * target and because it keeps the column optically aligned.
+   */
+  function accessoryOf(row: Row): string {
+    if (row.kind === 'tab') return browserName(row.tab.browser.variant);
+    if (row.kind === 'bookmark' || row.kind === 'history') return browserName(row.browserVariant);
+    return '⏎';
+  }
+
+  const ICONS: Record<Row['kind'], string> = {
+    tab: 'globe',
+    bookmark: 'bookmark',
+    history: 'history',
+    search: 'search',
+    url: 'link',
+  };
+
+  /** Stable per-row identity so closing a tab cannot shuffle rows onto each other. */
+  function rowKey(row: Row): string {
+    if (row.kind === 'tab') return `tab:${row.tab.id}`;
+    if (row.kind === 'history') return `history:${row.browserVariant}:${row.url}`;
+    if (row.kind === 'bookmark') return `bookmark:${row.browserVariant}:${row.url}`;
+    if (row.kind === 'url') return `url:${row.url}`;
+    return `search:${row.query}`;
   }
 
   function handleMessage(event: MessageEvent): void {
@@ -108,6 +153,17 @@
 
   $effect(() => {
     void refresh(query);
+  });
+
+  // Keep the keyboard cursor on screen. `block: 'nearest'` moves the list only
+  // when the row is actually out of view, so ↓ through visible rows is a
+  // selection change and nothing else — no scroll jitter.
+  $effect(() => {
+    const index = selected;
+    void rows.length;
+    if (!listEl || index < 0) return;
+    const row = listEl.querySelector<HTMLElement>(`[data-index="${index}"]`);
+    row?.scrollIntoView?.({ block: 'nearest' });
   });
 
   onMount(() => {
@@ -137,8 +193,27 @@
 
     const viewActions: ExtensionAction[] = [
       {
+        id: `${EXTENSION_ID}:open`,
+        title: 'Open',
+        description: 'Switch to the tab, or open the URL',
+        icon: '↵',
+        category: 'Primary',
+        extensionId: EXTENSION_ID,
+        context: ActionContext.EXTENSION_VIEW,
+        primary: true,
+        // Declaring Enter hands the key to this view: the launcher stops
+        // submitting the search query to the extension when a primary action
+        // owns it, and the iframe forwards the key here instead.
+        shortcut: 'Enter',
+        execute: async () => {
+          await activate(rows[selected]);
+        },
+      },
+      {
+        // No shortcut: deleting is a ⌘K decision, and the platform reserves
+        // ⌘⌫ for text editing (and drops shortcuts on destructive actions).
         id: `${EXTENSION_ID}:close-tab`,
-        title: 'Close Tab',
+        title: 'Close tab',
         icon: '✕',
         category: 'Destructive',
         extensionId: EXTENSION_ID,
@@ -146,16 +221,22 @@
         destructive: true,
         execute: async () => {
           const row = rows[selected];
-          if (row?.kind === 'tab') {
-            await browser.closeTab(row.tab.id);
-            await feedback.showHUD('Tab closed');
-            await refresh(query);
-          } else {
+          if (row?.kind !== 'tab') {
             await feedback.showHUD('Select a tab to close');
+            return;
           }
+          const tabId = row.tab.id;
+          await browser.closeTab(tabId);
+          await feedback.showHUD('Tab closed');
+          // Drop the row now so the list responds to the key that closed it,
+          // then let the bridge's answer settle the final order.
+          rows = rows.filter((r) => !(r.kind === 'tab' && r.tab.id === tabId));
+          selected = Math.min(selected, Math.max(rows.length - 1, 0));
+          await refresh(query);
         },
       },
       {
+        // Mod+C is reserved for copying text, so this lives in ⌘K only.
         id: `${EXTENSION_ID}:copy-url`,
         title: 'Copy URL',
         icon: '📋',
@@ -168,45 +249,47 @@
             await feedback.showHUD('Nothing to copy');
             return;
           }
-          // Try the modern API first; fall back to execCommand for
-          // sandboxed iframe contexts where the Permissions API denies
-          // clipboard access.
-          let ok = false;
-          try {
-            await navigator.clipboard.writeText(url);
-            ok = true;
-          } catch { /* try fallback */ }
-          if (!ok) {
-            try {
-              const ta = document.createElement('textarea');
-              ta.value = url;
-              ta.setAttribute('readonly', '');
-              ta.style.position = 'fixed';
-              ta.style.opacity = '0';
-              document.body.appendChild(ta);
-              ta.select();
-              ok = document.execCommand('copy');
-              ta.remove();
-            } catch { /* give up */ }
+          await feedback.showHUD((await copyText(url)) ? 'Copied URL' : 'Copy failed');
+        },
+      },
+      {
+        id: `${EXTENSION_ID}:copy-markdown`,
+        title: 'Copy as Markdown',
+        icon: '📋',
+        category: 'Share',
+        extensionId: EXTENSION_ID,
+        context: ActionContext.EXTENSION_VIEW,
+        shortcut: 'Mod+Alt+C',
+        execute: async () => {
+          const row = rows[selected];
+          const url = urlOf(row);
+          if (!row || !url) {
+            await feedback.showHUD('Nothing to copy');
+            return;
           }
-          await feedback.showHUD(ok ? 'Copied URL' : 'Copy failed');
+          const markdown = `[${row.title}](${url})`;
+          await feedback.showHUD((await copyText(markdown)) ? 'Copied Markdown' : 'Copy failed');
         },
       },
       {
         id: `${EXTENSION_ID}:open-new-window`,
-        title: 'Open in New Window',
+        title: 'Open in new window',
         icon: '🪟',
         category: 'Navigation',
         extensionId: EXTENSION_ID,
         context: ActionContext.EXTENSION_VIEW,
+        shortcut: 'Mod+Enter',
         execute: async () => {
           const url = urlOf(rows[selected]);
-          if (url) {
-            const target = await resolveTarget();
-            await browser.openUrl(url, target ? { browser: target, newWindow: true } : { newWindow: true });
-          } else {
+          if (!url) {
             await feedback.showHUD('Nothing to open');
+            return;
           }
+          const target = await resolveTarget();
+          await browser.openUrl(
+            url,
+            target ? { browser: target, newWindow: true } : { newWindow: true },
+          );
         },
       },
     ];
@@ -219,41 +302,61 @@
       window.removeEventListener('message', handleMessage);
     };
   });
-
-  const ICONS: Record<Row['kind'], string> = {
-    tab: '🌐',
-    bookmark: '🔖',
-    history: '🕘',
-    search: '🔍',
-    url: '🔗',
-  };
 </script>
 
-<div class="command-bar" role="listbox" tabindex="0">
-  {#each rows as row, i (row.kind + ':' + i)}
+<div class="command-bar" role="listbox" aria-label="Browser" tabindex="-1" bind:this={listEl}>
+  {#each rows as row, i (rowKey(row))}
     <button
+      type="button"
       class="row"
       class:selected={i === selected}
       role="option"
       aria-selected={i === selected}
-      onclick={() => activate(row)}
+      data-index={i}
+      onclick={() => void activate(row)}
       onmouseenter={() => (selected = i)}
     >
-      <span class="icon">{ICONS[row.kind]}</span>
-      <span class="title">{row.title}</span>
-      {#if subtitleOf(row)}<span class="subtitle">{subtitleOf(row)}</span>{/if}
+      <span class="row-icon-tile" aria-hidden="true">
+        <asyar-icon name={ICONS[row.kind]} size="16"></asyar-icon>
+      </span>
+      <div class="row-content">
+        <span class="row-title">{row.title}</span>
+        {#if subtitleOf(row)}
+          <span class="row-subtitle">{subtitleOf(row)}</span>
+        {/if}
+      </div>
+      <div class="row-accessory-container">
+        {#if row.kind === 'tab'}
+          <span class="kind-badge">Tab</span>
+        {:else if row.kind === 'bookmark'}
+          <span class="kind-badge">Bookmark</span>
+        {/if}
+        <span class="row-accessory">{accessoryOf(row)}</span>
+      </div>
     </button>
   {/each}
 
-  {#if rows.length === 0 && pairedCount === 0}
+  {#if pairedCount === 0 && rows.length === 0}
     <div class="companion-cta">
-      <span class="cta-icon">🧩</span>
+      <span class="cta-icon" aria-hidden="true">
+        <asyar-icon name="puzzle" size="24"></asyar-icon>
+      </span>
       <p class="cta-title">Connect your browser</p>
       <p class="cta-body">
-        This extension works together with the <strong>Asyar Companion</strong> browser
-        extension. Install the companion in your browser, then approve it from
-        <strong>Settings → Browsers</strong> to search your tabs, bookmarks, and history here.
+        This view reads tabs, bookmarks, and history through the
+        <strong>Asyar Companion</strong> browser extension. Install it in your browser, then approve
+        it in <strong>Settings → Browsers</strong>.
       </p>
+    </div>
+  {:else if pairedCount !== null && rows.length === 0}
+    <div class="empty-state">
+      {#if query.trim()}
+        <p class="empty-title">No browser tabs or history matching “{query.trim()}”</p>
+        <p class="empty-body">Press ⏎ to search the web for “{query.trim()}”.</p>
+      {:else}
+        <p class="empty-title">No open tabs</p>
+        <p class="empty-body">Open a tab in a paired browser, or type to search history.</p>
+      {/if}
     </div>
   {/if}
 </div>
@@ -262,57 +365,195 @@
   .command-bar {
     display: flex;
     flex-direction: column;
-    padding: var(--space-2);
+    height: 100%;
+    padding: var(--space-2) var(--space-3);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     outline: none;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
+
+  .command-bar::-webkit-scrollbar {
+    width: var(--space-2);
+  }
+
+  .command-bar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .command-bar::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    border-radius: var(--radius-full);
+  }
+
   .row {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    padding: var(--space-2) var(--space-3);
-    background: transparent;
-    border: none;
-    text-align: left;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    font: inherit;
+    /* Standard Asyar launcher row metric: 38px, touching without random gaps */
+    flex: 0 0 var(--shell-row-h);
+    height: var(--shell-row-h);
     width: 100%;
+    padding: 0 var(--space-3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background-color: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: default;
+    box-sizing: border-box;
+    transition: none;
   }
+
+  .row:hover {
+    background-color: var(--bg-hover);
+  }
+
   .row.selected {
-    background: var(--bg-selected);
+    background-color: var(--bg-selected);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-primary) 35%, transparent);
   }
-  .icon {
-    font-size: var(--font-size-base);
+
+  .row:focus-visible {
+    outline: none;
   }
-  .title {
-    flex: 1;
+
+  /* 22px icon tile: matches launcher optical icon column */
+  .row-icon-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--separator);
+  }
+
+  .row.selected .row-icon-tile {
     color: var(--text-primary);
+    background-color: color-mix(in srgb, var(--accent-primary) 18%, var(--bg-tertiary));
+    border-color: color-mix(in srgb, var(--accent-primary) 35%, transparent);
   }
-  .subtitle {
+
+  .row-content {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-3);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .row-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+    font-size: var(--font-size-base);
+    font-weight: 500;
+  }
+
+  .row-subtitle {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     color: var(--text-tertiary);
     font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
   }
-  .companion-cta {
+
+  .row-accessory-container {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+
+  .kind-badge {
+    padding: 1px var(--space-2);
+    border-radius: var(--radius-xs);
+    background-color: var(--bg-tertiary);
+    color: var(--text-tertiary);
+    font-size: var(--font-size-2xs);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid var(--separator);
+  }
+
+  .row-accessory {
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+
+  .row.selected .row-accessory {
+    color: var(--text-secondary);
+  }
+
+  .companion-cta,
+  .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     text-align: center;
     gap: var(--space-2);
-    padding: var(--space-7) var(--space-5);
+    padding: var(--space-9) var(--space-6);
   }
+
   .cta-icon {
-    font-size: var(--font-size-xl);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--size-2xl);
+    height: var(--size-2xl);
+    margin-bottom: var(--space-2);
+    border-radius: var(--radius-lg);
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
   }
+
   .cta-title {
     margin: 0;
     color: var(--text-primary);
-    font-size: var(--font-size-base);
-    font-weight: 600;
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
   }
+
   .cta-body {
     margin: 0;
-    max-width: 32ch;
+    max-width: 34ch;
     color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+  }
+
+  .cta-body strong {
+    color: var(--text-primary);
+    font-weight: var(--font-weight-medium);
+  }
+
+  .empty-title {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-base);
+  }
+
+  .empty-body {
+    margin: 0;
+    max-width: 36ch;
+    color: var(--text-tertiary);
     font-size: var(--font-size-sm);
     line-height: 1.5;
   }
