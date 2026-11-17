@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { ExtensionContext } from 'asyar-sdk/view';
+  import type { ExtensionContext } from 'asyar-sdk/contracts';
   import { ActionContext } from 'asyar-sdk/contracts';
   import type {
     IBrowserService,
@@ -16,17 +16,33 @@
 
   const EXTENSION_ID = 'org.asyar.browser';
 
-  let { context }: { context: ExtensionContext } = $props();
+  interface SearchBarAccessoryLike {
+    onChange(handler: (value: string) => void): () => void;
+  }
+
+  let {
+    context,
+    searchBarAccessory,
+  }: { context: ExtensionContext; searchBarAccessory?: SearchBarAccessoryLike } = $props();
   // `context` is a stable prop for this view's lifetime; reading the proxy
   // once at init is intentional.
   // svelte-ignore state_referenced_locally
   const browser = context.getService<IBrowserService>('browser');
 
   let query = $state('');
-  let rows = $state<Row[]>([]);
+  let filterKind = $state<'all' | 'tabs' | 'history' | 'bookmarks'>('all');
+  let rawRows = $state<Row[]>([]);
   let selected = $state(0);
   let openTargetSetting = $state('most-recent');
   let listEl = $state<HTMLDivElement | null>(null);
+
+  const rows = $derived.by(() => {
+    if (filterKind === 'all') return rawRows;
+    if (filterKind === 'tabs') return rawRows.filter((r) => r.kind === 'tab');
+    if (filterKind === 'history') return rawRows.filter((r) => r.kind === 'history');
+    if (filterKind === 'bookmarks') return rawRows.filter((r) => r.kind === 'bookmark');
+    return rawRows;
+  });
 
   // Tracks whether any browser is paired so we can show install guidance when
   // the Asyar Companion isn't connected yet. `null` = not checked yet (avoids a
@@ -49,7 +65,7 @@
       q ? browser.listBookmarks({ query: q }) : Promise.resolve([]),
     ]);
     if (seq !== reqSeq) return; // a newer refresh superseded this one
-    rows = blendResults(q, {
+    rawRows = blendResults(q, {
       tabs: tabsR.status === 'fulfilled' ? tabsR.value : [],
       history: histR.status === 'fulfilled' ? histR.value : [],
       bookmarks: bmR.status === 'fulfilled' ? bmR.value : [],
@@ -188,6 +204,11 @@
     })();
     window.addEventListener('message', handleMessage);
 
+    const offAccessory = searchBarAccessory?.onChange((value: string) => {
+      filterKind = (value as 'all' | 'tabs' | 'history' | 'bookmarks') || 'all';
+      selected = 0;
+    });
+
     const actionsService = context.getService<IActionService>('actions');
     const feedback = context.getService<IFeedbackService>('feedback');
 
@@ -230,7 +251,7 @@
           await feedback.showHUD('Tab closed');
           // Drop the row now so the list responds to the key that closed it,
           // then let the bridge's answer settle the final order.
-          rows = rows.filter((r) => !(r.kind === 'tab' && r.tab.id === tabId));
+          rawRows = rawRows.filter((r) => !(r.kind === 'tab' && r.tab.id === tabId));
           selected = Math.min(selected, Math.max(rows.length - 1, 0));
           await refresh(query);
         },
@@ -300,6 +321,7 @@
 
     return () => {
       window.removeEventListener('message', handleMessage);
+      offAccessory?.();
     };
   });
 </script>

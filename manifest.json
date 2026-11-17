@@ -38,6 +38,16 @@
       "icon": "🌐",
       "mode": "view",
       "component": "CommandBar",
+      "searchBarAccessory": {
+        "type": "dropdown",
+        "default": "all",
+        "options": [
+          { "value": "all", "title": "All Results" },
+          { "value": "tabs", "title": "Open Tabs" },
+          { "value": "history", "title": "History" },
+          { "value": "bookmarks", "title": "Bookmarks" }
+        ]
+      },
       "actions": []
     }
   ],

@@ -11,6 +11,7 @@ import {
   ExtensionContext,
   extensionBridge,
   registerIconElement,
+  searchBarAccessory,
   type Extension,
   type IExtensionManager,
 } from 'asyar-sdk/view';
@@ -83,5 +84,5 @@ void (async () => {
 const viewName = new URLSearchParams(window.location.search).get('view');
 const target = document.getElementById('app');
 if (viewName === 'CommandBar' && target) {
-  mount(CommandBar, { target, props: { context } });
+  mount(CommandBar, { target, props: { context, searchBarAccessory } });
 }
