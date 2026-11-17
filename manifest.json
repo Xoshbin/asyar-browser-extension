@@ -5,9 +5,9 @@
   "type": "extension",
   "description": "Search tabs, bookmarks, and history across your paired browsers; open URLs in any paired browser.",
   "author": "Asyar",
-  "icon": "🌐",
+  "icon": "assets/icon.png",
   "searchable": true,
-  "asyarSdk": "^4.15.0",
+  "asyarSdk": "^4.17.0",
   "permissions": [
     "browser:tabs.read",
     "browser:tabs.write",
@@ -42,10 +42,22 @@
         "type": "dropdown",
         "default": "all",
         "options": [
-          { "value": "all", "title": "All Results" },
-          { "value": "tabs", "title": "Open Tabs" },
-          { "value": "history", "title": "History" },
-          { "value": "bookmarks", "title": "Bookmarks" }
+          {
+            "value": "all",
+            "title": "All Results"
+          },
+          {
+            "value": "tabs",
+            "title": "Open Tabs"
+          },
+          {
+            "value": "history",
+            "title": "History"
+          },
+          {
+            "value": "bookmarks",
+            "title": "Bookmarks"
+          }
         ]
       },
       "actions": []
