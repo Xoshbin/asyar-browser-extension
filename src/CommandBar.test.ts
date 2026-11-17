@@ -18,6 +18,7 @@ function makeBrowser() {
     searchWeb: vi.fn(async () => {}),
     getMostRecentActiveBrowser: vi.fn(async () => ({ family: 'chromium', variant: 'chrome' })),
     listPairedBrowsers: vi.fn(async () => [{ family: 'chromium', variant: 'chrome' }]),
+    listAvailableBrowsers: vi.fn(async () => []),
   };
 }
 function makeContext(browser: any) {
@@ -25,12 +26,14 @@ function makeContext(browser: any) {
   // Stable singletons so registerAction calls are observable after render
   const actions = { registerAction: vi.fn(), unregisterAction: vi.fn() };
   const feedback = { showHUD: vi.fn(async () => {}) };
+  const extensions = { setActiveViewActionLabel: vi.fn() };
   return {
     getService: (name: string) => {
       if (name === 'browser') return browser;
       if (name === 'preferences') return prefs;
       if (name === 'actions') return actions;
       if (name === 'feedback') return feedback;
+      if (name === 'extensions') return extensions;
       return undefined;
     },
   } as any;
@@ -151,6 +154,162 @@ describe('CommandBar', () => {
         'https://react.dev',
         { browser: { family: 'chromium', variant: 'chrome', profileId: 'Default' }, newWindow: true },
       );
+    });
+
+    it('registers copy-title action that writes the title to clipboard', async () => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: vi.fn(async () => {}) },
+        configurable: true,
+      });
+      const browser = makeBrowser();
+      const ctx = makeContext(browser);
+      render(CommandBar, { props: { context: ctx } });
+      await screen.findByText('React');
+      const action = getAction(ctx, 'org.asyar.browser:copy-title');
+      expect(action).toBeDefined();
+      await action.execute();
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('React');
+    });
+
+    it('registers copy-domain action that writes the domain to clipboard', async () => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: vi.fn(async () => {}) },
+        configurable: true,
+      });
+      const browser = makeBrowser();
+      const ctx = makeContext(browser);
+      render(CommandBar, { props: { context: ctx } });
+      await screen.findByText('React');
+      const action = getAction(ctx, 'org.asyar.browser:copy-domain');
+      expect(action).toBeDefined();
+      await action.execute();
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('react.dev');
+    });
+
+    it('registers fetch-tabs action that refreshes tabs', async () => {
+      const browser = makeBrowser();
+      const ctx = makeContext(browser);
+      render(CommandBar, { props: { context: ctx } });
+      await screen.findByText('React');
+      const action = getAction(ctx, 'org.asyar.browser:fetch-tabs');
+      expect(action).toBeDefined();
+      const callsBefore = browser.listTabs.mock.calls.length;
+      await action.execute();
+      expect(browser.listTabs.mock.calls.length).toBeGreaterThan(callsBefore);
+    });
+
+    it('registers select-browsers action that cycles through detected browsers', async () => {
+      const browser = makeBrowser();
+      browser.listPairedBrowsers = vi.fn(async () => [
+        { family: 'chromium', variant: 'brave' },
+      ]);
+      const ctx = makeContext(browser);
+      const setMock = vi.fn(async () => {});
+      const searchBarAccessory = {
+        onChange: vi.fn(() => () => {}),
+        set: setMock,
+      };
+      render(CommandBar, { props: { context: ctx, searchBarAccessory } });
+      await screen.findByText('React');
+      await waitFor(() => expect(setMock).toHaveBeenCalled());
+      const action = getAction(ctx, 'org.asyar.browser:select-browsers');
+      expect(action).toBeDefined();
+      expect(action.shortcut).toBe('Mod+Shift+S');
+      await action.execute();
+      expect(setMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          buttonTitle: 'Brave Only',
+        }),
+      );
+    });
+  });
+
+  describe('Dynamic Multistep SearchBarAccessory and filtering', () => {
+    it('builds multistep accessory with result types and Filter by Browser submenu', async () => {
+      const browser = makeBrowser();
+      browser.listPairedBrowsers = vi.fn(async () => [
+        { family: 'chromium', variant: 'brave' },
+        { family: 'chromium', variant: 'chrome' },
+      ]);
+      const setMock = vi.fn(async () => {});
+      const searchBarAccessory = {
+        onChange: vi.fn(() => () => {}),
+        set: setMock,
+      };
+      render(CommandBar, { props: { context: makeContext(browser), searchBarAccessory } });
+      await waitFor(() => expect(setMock).toHaveBeenCalled());
+      expect(setMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          buttonTitle: 'All Results',
+          options: expect.arrayContaining([
+            expect.objectContaining({ value: 'all', title: 'All Results' }),
+            expect.objectContaining({ value: 'tabs', title: 'Open Tabs' }),
+            expect.objectContaining({ value: 'history', title: 'History' }),
+            expect.objectContaining({ value: 'bookmarks', title: 'Bookmarks' }),
+            expect.objectContaining({
+              value: 'submenu:browser',
+              title: 'Filter by Browser',
+              children: expect.arrayContaining([
+                expect.objectContaining({ value: 'browser:all', title: 'All Browsers' }),
+                expect.objectContaining({ value: 'browser:brave', title: 'Brave Only' }),
+                expect.objectContaining({ value: 'browser:chrome', title: 'Chrome Only' }),
+              ]),
+            }),
+          ]),
+        }),
+      );
+    });
+
+    it('filters rows by result type and browser simultaneously', async () => {
+      const browser = makeBrowser();
+      const braveId = { family: 'chromium', variant: 'brave', profileId: 'Default' };
+      browser.listTabs = vi.fn(async () => [
+        { id: 't1', browser: chromeId, windowId: 'w', index: 0, title: 'Chrome Tab', url: 'https://chrome.dev', isActive: false, isPinned: false, isAudible: false },
+        { id: 't2', browser: braveId, windowId: 'w', index: 1, title: 'Brave Tab', url: 'https://brave.dev', isActive: false, isPinned: false, isAudible: false },
+      ]);
+      browser.searchHistory = vi.fn(async () => [
+        { url: 'https://brave.com/history', title: 'Brave History', browser: braveId, lastVisitAt: 100, visitCount: 1 },
+      ]);
+      let changeCallback: (v: string) => void = () => {};
+      const searchBarAccessory = {
+        onChange: vi.fn((cb: (v: string) => void) => {
+          changeCallback = cb;
+          return () => {};
+        }),
+        set: vi.fn(async () => {}),
+      };
+
+      render(CommandBar, { props: { context: makeContext(browser), searchBarAccessory } });
+      await screen.findByText('Chrome Tab');
+      await screen.findByText('Brave Tab');
+      await screen.findByText('Brave History');
+
+      // 1. Filter by tabs only
+      changeCallback('tabs');
+      await waitFor(() => {
+        expect(screen.queryByText('Brave History')).toBeNull();
+        expect(screen.getByText('Chrome Tab')).toBeDefined();
+        expect(screen.getByText('Brave Tab')).toBeDefined();
+      });
+
+      // 2. Further filter by brave browser
+      changeCallback('browser:brave');
+      await waitFor(() => {
+        expect(screen.queryByText('Chrome Tab')).toBeNull();
+        expect(screen.queryByText('Brave History')).toBeNull();
+        expect(screen.getByText('Brave Tab')).toBeDefined();
+      });
+    });
+
+    it('updates active view action label to Open in <Browser>', async () => {
+      const browser = makeBrowser();
+      const ctx = makeContext(browser);
+      const extensions = ctx.getService('extensions');
+      render(CommandBar, { props: { context: ctx } });
+      await screen.findByText('React');
+      await waitFor(() => {
+        expect(extensions.setActiveViewActionLabel).toHaveBeenCalledWith('Open in Chrome');
+      });
     });
   });
 });
